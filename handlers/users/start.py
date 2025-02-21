@@ -18,208 +18,21 @@ import asyncio,re
 
 
 
-class UserStates(StatesGroup):
-    waiting_for_next_step = State() 
-    waiting_for_format = State()
-    waiting_for_type = State()
-
-
-
-
-# Ma'lumotlar bazasi ulanishi
-db = sqlite3.connect("channels.db")
-cursor = db.cursor()
-
-# Kanallarni saqlash uchun jadval yaratish
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS channels (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        channel_name TEXT UNIQUE
-    )
-
-""")
-db.commit()
-
-vip_db = sqlite3.connect("vip_admins.db")
-vip_cursor = vip_db.cursor()
-
-# VIP jadvalini yaratishni ta'minlash
-
-
 
 @dp.message_handler(commands=["start"])
 async def user_start(message: types.Message):
-    user_id = message.from_user.id
+    await message.answer("SALOM {message.from_user.first_name}")
 
-    # VIP foydalanuvchini tekshirish
-    vip_cursor.execute("SELECT vips FROM vip WHERE vips = ?", (f"@{message.from_user.username}",))
-    is_vip = vip_cursor.fetchone()
-
-    if is_vip:
-        await message.reply("🌟 Salom, VIP foydalanuvchi! Botdan to'liq foydalanishingiz mumkin.")
-        return
-
-    # Kanallarni ma'lumotlar bazasidan olish
-    cursor.execute("SELECT channel_name FROM channels")
-    channels = cursor.fetchall()
-
-    # Agar kanallar bo'sh bo'lsa, foydalanuvchiga xabar yuboriladi
-    if not channels:
-        await message.reply("Hozircha obuna bo'lish uchun kanallar mavjud emas.")
-        return
-
-    # Obuna bo'lmagan kanallarni aniqlash
-    unsubscribed_channels = []
-    for channel in channels:
-        channel_name = channel[0]
-        is_subscribed_result = await is_subscribed(user_id, channel_name)
-        if not is_subscribed_result:
-            unsubscribed_channels.append(channel_name)
-
-    # Agar foydalanuvchi barcha kanallarga obuna bo'lgan bo'lsa
-    if not unsubscribed_channels:
-        await message.reply("Rahmat! Siz barcha kanallarga obuna bo'lgansiz. Botdan foydalanishingiz mumkin.")
-        await UserStates.waiting_for_next_step.set()
-        return
-
-    # Obuna bo'lish uchun tugmalarni yaratish
-    keyboard = InlineKeyboardMarkup()
-    for channel_name in unsubscribed_channels:
-        subscribe_button = InlineKeyboardButton(
-            text=f"📢 {channel_name}",
-            url=f"https://t.me/{channel_name.lstrip('@')}"
-        )
-        keyboard.add(subscribe_button)
-
-    # Tekshirish tugmasini qo'shish
-    check_button = InlineKeyboardButton(
-        text="✅ Tekshirish",
-        callback_data="check_subscription"
-    )
-    keyboard.add(check_button)
-
-    # Foydalanuvchiga tugmalarni yuborish
-    await message.reply(
-        "Quyidagi kanallarga obuna bo'ling va '✅ Tekshirish' tugmasini bosing:",
-        reply_markup=keyboard
-    )
-
-
-    @dp.message_handler(lambda msg: msg.chat.id == user_id and UserStates.waiting_for_next_step.state)
-    async def handle_unsubscribed_message(msg: types.Message):
-        await msg.reply("❌ Siz hali hamma kanallarga obuna bo'lmadingiz. Iltimos, avval barcha kanallarga obuna bo'ling.\nℹ️ Agar qandaydur muammo bo'lsa /start ni bosing!")
-
-
-# Kanal qo'shish (Admin uchun
-
-
-def get_channels():
-    cursor.execute("SELECT channel_name FROM channels")
-    channels = cursor.fetchall()
-
-
-# Admin kanali qo'shish
-
-
-# Obuna holatini tekshirish funksiyasi
-async def is_subscribed(user_id: int, channel_username: str):
-    try:
-        member = await bot.get_chat_member(chat_id=channel_username, user_id=user_id)
-        return member.status in ["member", "administrator", "creator"]
-    except Exception as e:
-        print(f"Xatolik yuz berdi: {e}")
-        return False
 
 
 @dp.message_handler()
 async def check_subscription_on_message(message: types.Message):
-    """
-    Har bir xabarni tekshirib, foydalanuvchi barcha kanallarga obuna bo'lganini tasdiqlaydi.
-    Agar obuna bo'lmasa, obuna bo'lishini so'raydi.
-    """
-    user_id = message.from_user.id
-
-    # Kanallarni ma'lumotlar bazasidan olish
-    cursor.execute("SELECT channel_name FROM channels")
-    channels = cursor.fetchall()
-
-    # Obuna bo'lmagan kanallarni aniqlash
-    unsubscribed_channels = []
-    for channel in channels:
-        channel_name = channel[0]
-        is_subscribed_result = await is_subscribed(user_id, channel_name)
-        if not is_subscribed_result:
-            unsubscribed_channels.append(channel_name)
-
-    # Agar foydalanuvchi obuna bo'lmagan bo'lsa, obuna bo'lish so'raladi
-    if unsubscribed_channels:
-        keyboard = InlineKeyboardMarkup()
-        for channel_name in unsubscribed_channels:
-            subscribe_button = InlineKeyboardButton(
-                text=f"📢 {channel_name}",
-                url=f"https://t.me/{channel_name.lstrip('@')}"
-            )
-            keyboard.add(subscribe_button)
-
-            check_button = InlineKeyboardButton(
-                text="✅ Tekshirish",
-                callback_data="check_subscription"  # Tugma callback_data qiymati
-            )
-            keyboard.add(check_button)
-
-
-        await message.reply(
-            "❌ Iltimos, quyidagi kanallarga obuna bo'ling va '✅ Tekshirish' tugmasini bosing:",
-            reply_markup=keyboard
-        )
-        return
-
+    
     # Agar foydalanuvchi barcha kanallarga obuna bo'lgan bo'lsa, keyingi bosqichni davom ettirish
     await UserStates.waiting_for_next_step.set() # Foydalanuvchi xabarini ishlov berish davom ettiriladi
 
 
-@dp.callback_query_handler(lambda c: c.data == "check_subscription")
-async def check_subscription(callback_query: types.CallbackQuery):
-    try:
-        user_id = callback_query.from_user.id
 
-        # Ma'lumotlar bazasidan kanallarni olish
-        cursor.execute("SELECT channel_name FROM channels")
-        channels = cursor.fetchall()
-
-        # Obuna bo‘lmagan kanallarni aniqlash
-        unsubscribed_channels = []
-        for channel in channels:
-            channel_name = channel[0]
-            if not await is_subscribed(user_id, channel_name):
-                unsubscribed_channels.append(channel_name)
-
-        if not unsubscribed_channels:
-            # Agar barcha kanallarga obuna bo‘lsa
-            await callback_query.message.edit_text("✅ Rahmat! Siz barcha kanallarga obuna bo‘lgansiz.")
-            await UserStates.waiting_for_next_step.set()  # Foydalanuvchi xabarini ishlov berish davom ettiriladi
-        else:
-            # Agar obuna bo‘lmagan kanallar mavjud bo‘lsa
-            keyboard = InlineKeyboardMarkup()
-            for channel_name in unsubscribed_channels:
-                subscribe_button = InlineKeyboardButton(
-                    text=f"📢 {channel_name}",
-                    url=f"https://t.me/{channel_name.lstrip('@')}"
-                )
-                keyboard.add(subscribe_button)
-
-            check_button = InlineKeyboardButton(
-                text="✅ Tekshirish",
-                callback_data="check_subscription"
-            )
-            keyboard.add(check_button)
-
-            await callback_query.message.edit_text(
-                "❌ Iltimos, quyidagi kanallarga obuna bo‘ling va '✅ Tekshirish' tugmasini bosing:",
-                reply_markup=keyboard
-            )
-    except Exception as e:
-        print(f"Xatolik: {e}")  # Xatolik logini ko‘rsatish
     
 @dp.message_handler(state=UserStates.waiting_for_next_step)
 async def next_step(message: types.Message, state: FSMContext):
